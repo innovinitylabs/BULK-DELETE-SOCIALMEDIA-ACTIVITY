@@ -7,6 +7,7 @@ async function CleanTwitter({
     deleteAfter = null,
     protectedKeywords = [],
     keywordMatchType = "partial", // "partial" or "full"
+    protectReposts = false, // true = keyword filter also applies to reposts
     waitAfterAction = 2500,
     scrollDelay = 1500,
     dryRun = false
@@ -71,7 +72,8 @@ async function CleanTwitter({
                 );
                 matched = regex.test(text);
             } else {
-                matched = text.includes(lowerKeyword);
+                matched =
+                    text.includes(lowerKeyword);
             }
             if (matched) {
                 log(
@@ -220,17 +222,6 @@ async function CleanTwitter({
                 skipped++;
                 continue;
             }
-            const matchedKeyword =
-                containsProtectedKeyword(
-                    article
-                );
-            if (matchedKeyword) {
-                skipped++;
-                log(
-                    `Protected keyword match "${matchedKeyword}"`
-                );
-                continue;
-            }
             const repost =
                 isRepost(article);
             log(`Is repost: ${repost}`);
@@ -238,6 +229,19 @@ async function CleanTwitter({
                 repost &&
                 deleteReposts
             ) {
+                if (protectReposts) {
+                    const repostKeyword =
+                        containsProtectedKeyword(
+                            article
+                        );
+                    if (repostKeyword) {
+                        skipped++;
+                        log(
+                            `Protected repost keyword "${repostKeyword}"`
+                        );
+                        continue;
+                    }
+                }
                 log(
                     `Target repost: ${date.toDateString()}`
                 );
@@ -251,6 +255,18 @@ async function CleanTwitter({
                     );
                     break;
                 }
+                continue;
+            }
+            const matchedKeyword =
+                containsProtectedKeyword(
+                    article
+                );
+            if (matchedKeyword) {
+                skipped++;
+                log(
+                    `Protected keyword match "${matchedKeyword}"`
+                );
+                continue;
             }
             const mine =
                 isMyTweet(article);
@@ -294,33 +310,28 @@ async function CleanTwitter({
     log(`Skipped: ${skipped}`);
 }
 ```
-Example partial matching:
+Example:
+Protect keywords only for your tweets:
 ```
 CleanTwitter({
-    username: "valipokkann",
+    username: "VALIPOKKANN",
     deleteTweets: true,
     deleteReposts: true,
-    deleteBefore: "2024-01-01",
+    protectReposts: false,
     protectedKeywords: [
-        "aneka",
-        "vali",
-        "kurma"
+        "anekaroopam",
+        "valiroopam"
     ],
     keywordMatchType: "partial",
-    dryRun: true
+    deleteBefore: "2024-01-01",
+    dryRun: false
 });
 ```
-Example full-word matching:
+Protect reposts too:
 ```
-CleanTwitter({
-    username: "valipokkann",
-    protectedKeywords: [
-        "orientation"
-    ],
-    keywordMatchType: "full"
-});
+protectReposts: true
 ```
-Stop anytime:
+Stop script:
 ```
 window.stopCleaning = true
 ```
