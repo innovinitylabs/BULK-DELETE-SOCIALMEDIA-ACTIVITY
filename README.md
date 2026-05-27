@@ -126,48 +126,53 @@ async function DeleteMyOldTweets({
         }
     }
     log(`Finished. Deleted: ${deleted}, Skipped: ${skipped}`);
-}```
+}
+```
 
 Usage examples:
 
 Delete EVERYTHING:
 
-```DeleteMyOldTweets({
+```
+DeleteMyOldTweets({
     username: "valipokkann"
-});```
+});
+```
 
 Delete only before 2024:
 
-```DeleteMyOldTweets({
+```
+DeleteMyOldTweets({
     username: "valipokkann",
     deleteBefore: "2024-01-01"
-});```
+});
+```
 
 Delete only after 2020:
-
+```
 DeleteMyOldTweets({
     username: "valipokkann",
     deleteAfter: "2020-01-01"
 });
-
+```
 Delete only between 2021 and 2023:
-
+```
 DeleteMyOldTweets({
     username: "valipokkann",
     deleteAfter: "2021-01-01",
     deleteBefore: "2024-01-01"
 });
-
+```
 Safe testing mode:
-
+```
 DeleteMyOldTweets({
     username: "valipokkann",
     deleteBefore: "2024-01-01",
     dryRun: true
 });
-
+```
 Then switch:
-
+```
 dryRun: false
-
+```
 once verified.
