@@ -176,3 +176,251 @@ Then switch:
 dryRun: false
 ```
 once verified.
+
+#V2
+
+support:
+
+* protected keywords
+* repost undo
+* dry run
+* date range
+* own tweets only
+
+all in ONE unified script.
+
+Much cleaner.
+
+This version:
+
+* deletes tweets
+* removes reposts
+* skips protected keywords
+* respects date filters
+* works even if dates are null
+* supports dryRun mode
+```
+async function CleanTwitter({
+    username,
+    deleteTweets = true,
+    deleteReposts = true,
+    deleteBefore = null,
+    deleteAfter = null,
+    protectedKeywords = [],
+    waitAfterAction = 2500,
+    scrollDelay = 1500,
+    dryRun = false
+}) {
+    const DELETE_BEFORE = deleteBefore ? new Date(deleteBefore) : null;
+    const DELETE_AFTER = deleteAfter ? new Date(deleteAfter) : null;
+    function delay(ms) {
+        return new Promise(r => setTimeout(r, ms));
+    }
+    function log(msg) {
+        console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
+    }
+    function getTweetDate(article) {
+        const timeEl = article.querySelector("time");
+        if (!timeEl) return null;
+        const datetime = timeEl.getAttribute("datetime");
+        return datetime ? new Date(datetime) : null;
+    }
+    function shouldDeleteByDate(date) {
+        if (!date) return false;
+        if (DELETE_BEFORE && date >= DELETE_BEFORE) {
+            return false;
+        }
+        if (DELETE_AFTER && date <= DELETE_AFTER) {
+            return false;
+        }
+        return true;
+    }
+    function containsProtectedKeyword(article) {
+        const text = article.innerText.toLowerCase();
+        return protectedKeywords.some(keyword =>
+            text.includes(keyword.toLowerCase())
+        );
+    }
+    function isMyTweet(article) {
+        const links = [...article.querySelectorAll("a[href]")];
+        return links.some(link => {
+            const href = link.getAttribute("href");
+            return (
+                href === `/${username}` ||
+                href.startsWith(`/${username}/`)
+            );
+        });
+    }
+    function isRepost(article) {
+        return !!article.querySelector('button[data-testid="unretweet"]');
+    }
+    async function deleteTweet(article) {
+        const caret = article.querySelector("[data-testid='caret']");
+        if (!caret) {
+            log("Caret button missing.");
+            return false;
+        }
+        caret.click();
+        await delay(1000);
+        const menuItems = [...document.querySelectorAll("[role='menuitem']")];
+        let deleteItem = null;
+        for (const item of menuItems) {
+            const text = item.innerText.toLowerCase();
+            if (text.includes("delete")) {
+                deleteItem = item;
+                break;
+            }
+        }
+        if (!deleteItem) {
+            log("Delete option not found.");
+            document.body.click();
+            return false;
+        }
+        if (dryRun) {
+            log("DRY RUN: would delete tweet.");
+            document.body.click();
+            return true;
+        }
+        deleteItem.click();
+        await delay(1000);
+        const confirm = document.querySelector('[data-testid="confirmationSheetConfirm"]');
+        if (!confirm) {
+            log("Delete confirm missing.");
+            return false;
+        }
+        confirm.click();
+        log("Tweet deleted.");
+        return true;
+    }
+    async function undoRepost(article) {
+        const btn = article.querySelector('button[data-testid="unretweet"]');
+        if (!btn) {
+            log("Unretweet button missing.");
+            return false;
+        }
+        if (dryRun) {
+            log("DRY RUN: would undo repost.");
+            return true;
+        }
+        btn.click();
+        await delay(1000);
+        const confirm = document.querySelector(
+            'div[role="menuitem"][data-testid="unretweetConfirm"]'
+        );
+        if (!confirm) {
+            log("Unretweet confirm missing.");
+            return false;
+        }
+        confirm.click();
+        log("Repost removed.");
+        return true;
+    }
+    let processed = 0;
+    let deletedTweets = 0;
+    let removedReposts = 0;
+    let skipped = 0;
+    while (true) {
+        const articles = [...document.querySelectorAll("article")];
+        if (!articles.length) {
+            log("No articles found.");
+            break;
+        }
+        let acted = false;
+        for (const article of articles) {
+            if (article.dataset.cleaned) continue;
+            article.dataset.cleaned = "true";
+            processed++;
+            const date = getTweetDate(article);
+            if (!date) {
+                skipped++;
+                continue;
+            }
+            if (!shouldDeleteByDate(date)) {
+                log(`Skipped by date: ${date.toDateString()}`);
+                skipped++;
+                continue;
+            }
+            if (containsProtectedKeyword(article)) {
+                log("Skipped protected keyword.");
+                skipped++;
+                continue;
+            }
+            const repost = isRepost(article);
+            if (repost && deleteReposts) {
+                log(`Target repost: ${date.toDateString()}`);
+                const success = await undoRepost(article);
+                if (success) {
+                    removedReposts++;
+                    acted = true;
+                    await delay(waitAfterAction);
+                    break;
+                }
+            }
+            const mine = isMyTweet(article);
+            if (mine && deleteTweets) {
+                log(`Target tweet: ${date.toDateString()}`);
+                const success = await deleteTweet(article);
+                if (success) {
+                    deletedTweets++;
+                    acted = true;
+                    await delay(waitAfterAction);
+                    break;
+                }
+            }
+        }
+        window.scrollBy(0, 1500);
+        await delay(scrollDelay);
+        if (!acted) {
+            log("Scrolling...");
+        }
+    }
+    log("========== FINISHED ==========");
+    log(`Processed: ${processed}`);
+    log(`Deleted tweets: ${deletedTweets}`);
+    log(`Removed reposts: ${removedReposts}`);
+    log(`Skipped: ${skipped}`);
+}
+```
+Example usage:
+
+Safe dry run:
+```
+CleanTwitter({
+    username: "valipokkann",
+    deleteTweets: true,
+    deleteReposts: true,
+    deleteBefore: "2024-01-01",
+    protectedKeywords: [
+        "anekaroopam",
+        "valiroopam",
+        "kurmagati"
+    ],
+    dryRun: true
+});
+```
+Real execution:
+```
+CleanTwitter({
+    username: "valipokkann",
+    deleteTweets: true,
+    deleteReposts: true,
+    deleteBefore: "2024-01-01",
+    protectedKeywords: [
+        "anekaroopam",
+        "valiroopam",
+        "kurmagati"
+    ],
+    dryRun: false
+});
+```
+You can even protect:
+
+* specific project names
+* NFT collections
+* emotional threads
+* art posts
+* launch announcements
+
+Very useful for artists because your old posts are not just “content.”
+
+They’re evolutionary fossils of your thinking.
