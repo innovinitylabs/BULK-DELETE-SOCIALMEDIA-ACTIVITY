@@ -255,22 +255,35 @@ async function CleanTwitter({
         return true;
     }
 
-    function containsProtectedKeyword(article) {
+   function containsProtectedKeyword(article) {
 
-        const text = article.innerText.toLowerCase();
+    const tweetTextNode = article.querySelector(
+        '[data-testid="tweetText"]'
+    );
 
-        for (const keyword of protectedKeywords) {
-
-            if (text.includes(keyword.toLowerCase())) {
-
-                log(`Skipped protected keyword: "${keyword}"`);
-
-                return keyword;
-            }
-        }
-
+    if (!tweetTextNode) {
         return null;
     }
+
+    const text = tweetTextNode.innerText.toLowerCase();
+
+    for (const keyword of protectedKeywords) {
+
+        const regex = new RegExp(
+            `\\b${keyword.toLowerCase()}\\b`,
+            "i"
+        );
+
+        if (regex.test(text)) {
+
+            log(`Skipped protected keyword: "${keyword}"`);
+
+            return keyword;
+        }
+    }
+
+    return null;
+}
 
     function isMyTweet(article) {
 
