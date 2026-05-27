@@ -2,7 +2,7 @@
 BULK DELETE TWITTER, INSTAGRAM and FEW OTHER CODE SNIPPETS
 
 
-'''
+```
 async function DeleteMyOldTweets({
     username,
     deleteBefore = null,
@@ -126,22 +126,22 @@ async function DeleteMyOldTweets({
         }
     }
     log(`Finished. Deleted: ${deleted}, Skipped: ${skipped}`);
-}'''
+}```
 
 Usage examples:
 
 Delete EVERYTHING:
 
-'''DeleteMyOldTweets({
+```DeleteMyOldTweets({
     username: "valipokkann"
-});'''
+});```
 
 Delete only before 2024:
 
-'''DeleteMyOldTweets({
+```DeleteMyOldTweets({
     username: "valipokkann",
     deleteBefore: "2024-01-01"
-});'''
+});```
 
 Delete only after 2020:
 
