@@ -1,3 +1,5 @@
+1. Press CMD + I or CTRL + I or RightClick > Inspect element
+2. Paste the below script in console and press enter
 ```
 async function CleanTwitter({
     username,
@@ -223,7 +225,7 @@ async function CleanTwitter({
         if (dryRun) {
 
             log(
-                "DRY RUN: would delete tweet."
+                `DRY RUN: would delete tweet | Total deleted: ${deletedTweets + 1}`
             );
 
             document.body.click();
@@ -251,7 +253,9 @@ async function CleanTwitter({
 
         confirm.click();
 
-        log("Tweet deleted.");
+        log(
+            `Tweet deleted | Total deleted: ${deletedTweets + 1}`
+        );
 
         return true;
     }
@@ -282,7 +286,7 @@ async function CleanTwitter({
         if (dryRun) {
 
             log(
-                "DRY RUN: would undo repost."
+                `DRY RUN: would undo repost | Total reposts removed: ${removedReposts + 1}`
             );
 
             return true;
@@ -308,7 +312,9 @@ async function CleanTwitter({
 
         confirm.click();
 
-        log("Repost removed.");
+        log(
+            `Repost removed | Total reposts removed: ${removedReposts + 1}`
+        );
 
         return true;
     }
@@ -392,7 +398,7 @@ async function CleanTwitter({
             processed++;
 
             log(
-                `Checking article #${processed}`
+                `Checking article #${processed} | Deleted: ${deletedTweets} | Reposts removed: ${removedReposts} | Skipped: ${skipped}`
             );
 
             const date =
@@ -465,7 +471,7 @@ async function CleanTwitter({
                             "true";
 
                         log(
-                            `Protected repost keyword "${repostKeyword}"`
+                            `Protected repost keyword "${repostKeyword}" | Skipped: ${skipped}`
                         );
 
                         continue;
@@ -515,7 +521,7 @@ async function CleanTwitter({
                     "true";
 
                 log(
-                    `Protected keyword match "${matchedKeyword}"`
+                    `Protected keyword match "${matchedKeyword}" | Skipped: ${skipped}`
                 );
 
                 continue;
@@ -596,6 +602,10 @@ async function CleanTwitter({
     );
 }
 ```
+
+3. Now paste the below function call (customise as needed) and press enter.
+
+
 Example:
 Protect keywords only for your tweets:
 ```
@@ -613,7 +623,9 @@ CleanTwitter({
     dryRun: false
 });
 ```
-Protect reposts too:
+
+
+Protect reposts too: uses filtered keywords for reposts too
 ```
 protectReposts: true
 ```
