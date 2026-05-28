@@ -19,6 +19,8 @@ async function CleanTwitter({
     waitAfterAction = 2500,
     waitBetweenAttempts = 800,
 
+    maxLocalRetries = 4,
+
     dryRun = false
 }) {
 
@@ -60,6 +62,11 @@ async function CleanTwitter({
                 el.getClientRects().length
             )
         );
+    }
+
+    function closeMenus() {
+
+        document.body.click();
     }
 
     function getTweetDate(article) {
@@ -155,24 +162,45 @@ async function CleanTwitter({
 
     function isMyTweet(article) {
 
-        const links = [
+        const userLinks = [
             ...article.querySelectorAll(
-                "a[href]"
+                'a[role="link"]'
             )
         ];
 
-        return links.some(link => {
+        for (const link of userLinks) {
 
             const href =
                 link.getAttribute("href");
 
-            return (
-                href === `/${username}` ||
-                href.startsWith(
-                    `/${username}/`
+            if (!href) continue;
+
+            const normalized =
+                href.toLowerCase();
+
+            if (
+                normalized === `/${username.toLowerCase()}` ||
+                normalized.startsWith(
+                    `/${username.toLowerCase()}/status/`
                 )
-            );
-        });
+            ) {
+
+                const time =
+                    article.querySelector(
+                        "time"
+                    );
+
+                if (
+                    time &&
+                    link.contains(time)
+                ) {
+
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     async function findTargetArticle() {
@@ -185,8 +213,6 @@ async function CleanTwitter({
 
         for (const article of articles) {
 
-            await delay(50);
-
             const date =
                 getTweetDate(article);
 
@@ -198,11 +224,11 @@ async function CleanTwitter({
                 !shouldDeleteByDate(date)
             ) {
 
+                window.skippedItems++;
+
                 log(
                     `Skipped by date | ${date.toDateString()}`
                 );
-
-                window.skippedItems++;
 
                 continue;
             }
@@ -226,11 +252,11 @@ async function CleanTwitter({
 
                     if (keyword) {
 
+                        window.skippedItems++;
+
                         log(
                             `Skipped repost keyword "${keyword}"`
                         );
-
-                        window.skippedItems++;
 
                         continue;
                     }
@@ -258,11 +284,11 @@ async function CleanTwitter({
 
                 if (keyword) {
 
+                    window.skippedItems++;
+
                     log(
                         `Skipped keyword "${keyword}"`
                     );
-
-                    window.skippedItems++;
 
                     continue;
                 }
@@ -278,160 +304,231 @@ async function CleanTwitter({
         return null;
     }
 
-    async function deleteTweet(article) {
+    async function findCaretWithRetry(
+        article
+    ) {
 
-        const caret =
-            article.querySelector(
-                "button[aria-label='More']"
-            ) ||
-            article.querySelector(
-                "[data-testid='caret']"
-            );
-
-        if (
-            !caret ||
-            !isVisible(caret)
+        for (
+            let i = 0;
+            i < maxLocalRetries;
+            i++
         ) {
 
-            log(
-                "Tweet caret not found."
-            );
-
-            return false;
-        }
-
-        if (dryRun) {
-
-            log(
-                `DRY RUN tweet delete | Total: ${window.deletedTweets + 1}`
-            );
-
-            return true;
-        }
-
-        caret.click();
-
-        await delay(
-            waitBetweenAttempts
-        );
-
-        const menuItems =
-            document.querySelectorAll(
-                "[role='menuitem']"
-            );
-
-        let deleteItem = null;
-
-        for (const item of menuItems) {
-
-            const text =
-                item.innerText.toLowerCase();
+            const caret =
+                article.querySelector(
+                    "button[aria-label='More']"
+                ) ||
+                article.querySelector(
+                    "[data-testid='caret']"
+                );
 
             if (
-                text.includes("delete")
+                caret &&
+                isVisible(caret)
             ) {
 
-                deleteItem = item;
-
-                break;
+                return caret;
             }
+
+            await delay(300);
         }
 
-        if (!deleteItem) {
-
-            log(
-                "Delete menu item missing."
-            );
-
-            document.body.click();
-
-            return false;
-        }
-
-        deleteItem.click();
-
-        await delay(
-            waitBetweenAttempts
-        );
-
-        const confirm =
-            document.querySelector(
-                "button[data-testid='confirmationSheetConfirm']"
-            );
-
-        if (
-            !confirm ||
-            !isVisible(confirm)
-        ) {
-
-            log(
-                "Delete confirm missing."
-            );
-
-            return false;
-        }
-
-        confirm.click();
-
-        return true;
+        return null;
     }
 
-    async function undoRepost(article) {
+    async function tryDeleteTweet(
+        article
+    ) {
 
-        const btn =
-            article.querySelector(
-                'button[data-testid="unretweet"]'
-            );
-
-        if (
-            !btn ||
-            !isVisible(btn)
+        for (
+            let retry = 1;
+            retry <= maxLocalRetries;
+            retry++
         ) {
 
-            log(
-                "Unretweet button missing."
+            closeMenus();
+
+            await delay(300);
+
+            const caret =
+                await findCaretWithRetry(
+                    article
+                );
+
+            if (!caret) {
+
+                log(
+                    `Caret not found (retry ${retry}/${maxLocalRetries})`
+                );
+
+                continue;
+            }
+
+            if (dryRun) {
+
+                log(
+                    `DRY RUN tweet delete | Total: ${window.deletedTweets + 1}`
+                );
+
+                return true;
+            }
+
+            caret.click();
+
+            await delay(
+                waitBetweenAttempts
             );
 
-            return false;
-        }
+            const menuItems =
+                document.querySelectorAll(
+                    "[role='menuitem']"
+                );
 
-        if (dryRun) {
+            let deleteItem = null;
 
-            log(
-                `DRY RUN repost remove | Total: ${window.removedReposts + 1}`
+            for (const item of menuItems) {
+
+                const text =
+                    item.innerText.toLowerCase();
+
+                if (
+                    text.includes(
+                        "delete"
+                    )
+                ) {
+
+                    deleteItem =
+                        item;
+
+                    break;
+                }
+            }
+
+            if (!deleteItem) {
+
+                log(
+                    `Delete menu missing (retry ${retry}/${maxLocalRetries})`
+                );
+
+                closeMenus();
+
+                await delay(500);
+
+                continue;
+            }
+
+            deleteItem.click();
+
+            await delay(
+                waitBetweenAttempts
             );
+
+            const confirm =
+                document.querySelector(
+                    "button[data-testid='confirmationSheetConfirm']"
+                );
+
+            if (
+                !confirm ||
+                !isVisible(confirm)
+            ) {
+
+                log(
+                    `Delete confirm missing (retry ${retry}/${maxLocalRetries})`
+                );
+
+                closeMenus();
+
+                await delay(500);
+
+                continue;
+            }
+
+            confirm.click();
 
             return true;
         }
 
-        btn.click();
+        return false;
+    }
 
-        await delay(
-            waitBetweenAttempts
-        );
+    async function tryUndoRepost(
+        article
+    ) {
 
-        const confirm =
-            document.querySelector(
-                'div[role="menuitem"][data-testid="unretweetConfirm"]'
+        for (
+            let retry = 1;
+            retry <= maxLocalRetries;
+            retry++
+        ) {
+
+            closeMenus();
+
+            await delay(300);
+
+            const btn =
+                article.querySelector(
+                    'button[data-testid="unretweet"]'
+                );
+
+            if (
+                !btn ||
+                !isVisible(btn)
+            ) {
+
+                log(
+                    `Unretweet button missing (retry ${retry}/${maxLocalRetries})`
+                );
+
+                continue;
+            }
+
+            if (dryRun) {
+
+                log(
+                    `DRY RUN repost remove | Total: ${window.removedReposts + 1}`
+                );
+
+                return true;
+            }
+
+            btn.click();
+
+            await delay(
+                waitBetweenAttempts
             );
 
-        if (!confirm) {
+            const confirm =
+                document.querySelector(
+                    'div[role="menuitem"][data-testid="unretweetConfirm"]'
+                );
 
-            log(
-                "Unretweet confirm missing."
-            );
+            if (!confirm) {
 
-            return false;
+                log(
+                    `Unretweet confirm missing (retry ${retry}/${maxLocalRetries})`
+                );
+
+                closeMenus();
+
+                await delay(500);
+
+                continue;
+            }
+
+            confirm.click();
+
+            return true;
         }
 
-        confirm.click();
-
-        return true;
+        return false;
     }
 
     let emptyPasses = 0;
 
-    while (!window.stopCleaning) {
+    while (
+        !window.stopCleaning
+    ) {
 
         const target =
             await findTargetArticle();
@@ -441,10 +538,12 @@ async function CleanTwitter({
             emptyPasses++;
 
             log(
-                `No target found | Scroll attempt ${emptyPasses}/5`
+                `No target found | Scroll ${emptyPasses}/5`
             );
 
-            if (emptyPasses >= 5) {
+            if (
+                emptyPasses >= 5
+            ) {
 
                 log(
                     "No more matching tweets/reposts."
@@ -453,7 +552,10 @@ async function CleanTwitter({
                 break;
             }
 
-            window.scrollBy(0, 500);
+            window.scrollBy(
+                0,
+                500
+            );
 
             await delay(1200);
 
@@ -473,7 +575,7 @@ async function CleanTwitter({
         ) {
 
             success =
-                await deleteTweet(
+                await tryDeleteTweet(
                     target.article
                 );
 
@@ -489,7 +591,7 @@ async function CleanTwitter({
         } else {
 
             success =
-                await undoRepost(
+                await tryUndoRepost(
                     target.article
                 );
 
@@ -506,20 +608,27 @@ async function CleanTwitter({
         if (!success) {
 
             log(
-                "Action failed. Small retry scroll."
+                "Target failed after retries. Small scroll."
             );
 
-            window.scrollBy(0, 120);
+            window.scrollBy(
+                0,
+                150
+            );
 
             await delay(1000);
 
             continue;
         }
 
-        await delay(waitAfterAction);
+        await delay(
+            waitAfterAction
+        );
     }
 
-    if (window.stopCleaning) {
+    if (
+        window.stopCleaning
+    ) {
 
         log(
             "STOPPED BY USER"
