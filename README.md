@@ -62,20 +62,6 @@ async function CleanTwitter({
         );
     }
 
-    function isInViewport(el) {
-
-        const rect =
-            el.getBoundingClientRect();
-
-        return (
-            rect.top >= 0 &&
-            rect.bottom <= (
-                window.innerHeight ||
-                document.documentElement.clientHeight
-            )
-        );
-    }
-
     function getTweetDate(article) {
 
         const timeEl =
@@ -199,11 +185,7 @@ async function CleanTwitter({
 
         for (const article of articles) {
 
-            if (!isInViewport(article)) {
-                continue;
-            }
-
-            await delay(100);
+            await delay(50);
 
             const date =
                 getTweetDate(article);
@@ -471,9 +453,9 @@ async function CleanTwitter({
                 break;
             }
 
-            window.scrollBy(0, 1200);
+            window.scrollBy(0, 500);
 
-            await delay(1500);
+            await delay(1200);
 
             continue;
         }
@@ -527,7 +509,7 @@ async function CleanTwitter({
                 "Action failed. Small retry scroll."
             );
 
-            window.scrollBy(0, 300);
+            window.scrollBy(0, 120);
 
             await delay(1000);
 
