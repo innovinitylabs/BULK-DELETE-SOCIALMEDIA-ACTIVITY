@@ -21,6 +21,8 @@ async function CleanTwitter({
 
     maxLocalRetries = 4,
 
+    maxEmptyPasses = 30,
+
     dryRun = false
 }) {
 
@@ -538,11 +540,11 @@ async function CleanTwitter({
             emptyPasses++;
 
             log(
-                `No target found | Scroll ${emptyPasses}/5`
+                `No target found | Scroll ${emptyPasses}/${maxEmptyPasses}`
             );
 
             if (
-                emptyPasses >= 5
+                emptyPasses >= maxEmptyPasses
             ) {
 
                 log(
@@ -557,7 +559,39 @@ async function CleanTwitter({
                 500
             );
 
-            await delay(1200);
+            let foundAfterScroll =
+                false;
+
+            for (
+                let i = 0;
+                i < 15;
+                i++
+            ) {
+
+                await delay(400);
+
+                const retryTarget =
+                    await findTargetArticle();
+
+                if (
+                    retryTarget
+                ) {
+
+                    foundAfterScroll =
+                        true;
+
+                    break;
+                }
+            }
+
+            if (
+                !foundAfterScroll
+            ) {
+
+                log(
+                    "Still no targets after waiting for lazy load."
+                );
+            }
 
             continue;
         }
