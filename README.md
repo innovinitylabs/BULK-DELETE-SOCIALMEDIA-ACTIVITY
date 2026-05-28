@@ -17,7 +17,7 @@ async function CleanTwitter({
     protectReposts = false,
 
     waitAfterAction = 2500,
-    scrollDelay = 1500,
+    waitBetweenAttempts = 800,
 
     dryRun = false
 }) {
@@ -34,13 +34,31 @@ async function CleanTwitter({
 
     window.stopCleaning = false;
 
+    window.deletedTweets = 0;
+    window.removedReposts = 0;
+    window.skippedItems = 0;
+
     function delay(ms) {
-        return new Promise(r => setTimeout(r, ms));
+        return new Promise(resolve =>
+            setTimeout(resolve, ms)
+        );
     }
 
     function log(msg) {
         console.log(
             `[${new Date().toLocaleTimeString()}] ${msg}`
+        );
+    }
+
+    function isVisible(el) {
+
+        return !!(
+            el &&
+            (
+                el.offsetWidth ||
+                el.offsetHeight ||
+                el.getClientRects().length
+            )
         );
     }
 
@@ -105,10 +123,11 @@ async function CleanTwitter({
                 keywordMatchType === "full"
             ) {
 
-                const regex = new RegExp(
-                    `\\b${lowerKeyword}\\b`,
-                    "i"
-                );
+                const regex =
+                    new RegExp(
+                        `\\b${lowerKeyword}\\b`,
+                        "i"
+                    );
 
                 matched =
                     regex.test(text);
@@ -120,16 +139,18 @@ async function CleanTwitter({
             }
 
             if (matched) {
-
-                log(
-                    `Skipped protected keyword: "${keyword}"`
-                );
-
                 return keyword;
             }
         }
 
         return null;
+    }
+
+    function isRepost(article) {
+
+        return !!article.querySelector(
+            'button[data-testid="unretweet"]'
+        );
     }
 
     function isMyTweet(article) {
@@ -154,45 +175,154 @@ async function CleanTwitter({
         });
     }
 
-    function isRepost(article) {
+    async function findTargetArticle() {
 
-        return !!article.querySelector(
-            'button[data-testid="unretweet"]'
+        const articles = Array.from(
+            document.querySelectorAll(
+                "article[data-testid='tweet']"
+            )
         );
+
+        for (const article of articles) {
+
+            article.scrollIntoView({
+                block: "center"
+            });
+
+            await delay(200);
+
+            const date =
+                getTweetDate(article);
+
+            if (!date) {
+                continue;
+            }
+
+            if (
+                !shouldDeleteByDate(date)
+            ) {
+
+                log(
+                    `Skipped by date | ${date.toDateString()}`
+                );
+
+                window.skippedItems++;
+
+                continue;
+            }
+
+            const repost =
+                isRepost(article);
+
+            if (
+                repost &&
+                deleteReposts
+            ) {
+
+                if (
+                    protectReposts
+                ) {
+
+                    const keyword =
+                        containsProtectedKeyword(
+                            article
+                        );
+
+                    if (keyword) {
+
+                        log(
+                            `Skipped repost keyword "${keyword}"`
+                        );
+
+                        window.skippedItems++;
+
+                        continue;
+                    }
+                }
+
+                return {
+                    type: "repost",
+                    article,
+                    date
+                };
+            }
+
+            const mine =
+                isMyTweet(article);
+
+            if (
+                mine &&
+                deleteTweets
+            ) {
+
+                const keyword =
+                    containsProtectedKeyword(
+                        article
+                    );
+
+                if (keyword) {
+
+                    log(
+                        `Skipped keyword "${keyword}"`
+                    );
+
+                    window.skippedItems++;
+
+                    continue;
+                }
+
+                return {
+                    type: "tweet",
+                    article,
+                    date
+                };
+            }
+        }
+
+        return null;
     }
 
     async function deleteTweet(article) {
 
-        article.scrollIntoView({
-            behavior: "instant",
-            block: "center"
-        });
-
-        await delay(500);
-
         const caret =
+            article.querySelector(
+                "button[aria-label='More']"
+            ) ||
             article.querySelector(
                 "[data-testid='caret']"
             );
 
-        if (!caret) {
+        if (
+            !caret ||
+            !isVisible(caret)
+        ) {
 
             log(
-                "Caret button missing."
+                "Tweet caret not found."
             );
 
             return false;
         }
 
+        if (dryRun) {
+
+            log(
+                `DRY RUN tweet delete | Total: ${window.deletedTweets + 1}`
+            );
+
+            return true;
+        }
+
         caret.click();
 
-        await delay(1000);
+        await delay(
+            waitBetweenAttempts
+        );
 
-        const menuItems = [
-            ...document.querySelectorAll(
+        const menuItems =
+            document.querySelectorAll(
                 "[role='menuitem']"
-            )
-        ];
+            );
 
         let deleteItem = null;
 
@@ -214,7 +344,7 @@ async function CleanTwitter({
         if (!deleteItem) {
 
             log(
-                "Delete option not found."
+                "Delete menu item missing."
             );
 
             document.body.click();
@@ -222,27 +352,21 @@ async function CleanTwitter({
             return false;
         }
 
-        if (dryRun) {
-
-            log(
-                `DRY RUN: would delete tweet | Total deleted: ${deletedTweets + 1}`
-            );
-
-            document.body.click();
-
-            return true;
-        }
-
         deleteItem.click();
 
-        await delay(1000);
+        await delay(
+            waitBetweenAttempts
+        );
 
         const confirm =
             document.querySelector(
-                '[data-testid="confirmationSheetConfirm"]'
+                "button[data-testid='confirmationSheetConfirm']"
             );
 
-        if (!confirm) {
+        if (
+            !confirm ||
+            !isVisible(confirm)
+        ) {
 
             log(
                 "Delete confirm missing."
@@ -253,28 +377,20 @@ async function CleanTwitter({
 
         confirm.click();
 
-        log(
-            `Tweet deleted | Total deleted: ${deletedTweets + 1}`
-        );
-
         return true;
     }
 
     async function undoRepost(article) {
-
-        article.scrollIntoView({
-            behavior: "instant",
-            block: "center"
-        });
-
-        await delay(500);
 
         const btn =
             article.querySelector(
                 'button[data-testid="unretweet"]'
             );
 
-        if (!btn) {
+        if (
+            !btn ||
+            !isVisible(btn)
+        ) {
 
             log(
                 "Unretweet button missing."
@@ -286,7 +402,7 @@ async function CleanTwitter({
         if (dryRun) {
 
             log(
-                `DRY RUN: would undo repost | Total reposts removed: ${removedReposts + 1}`
+                `DRY RUN repost remove | Total: ${window.removedReposts + 1}`
             );
 
             return true;
@@ -294,7 +410,9 @@ async function CleanTwitter({
 
         btn.click();
 
-        await delay(1000);
+        await delay(
+            waitBetweenAttempts
+        );
 
         const confirm =
             document.querySelector(
@@ -312,273 +430,104 @@ async function CleanTwitter({
 
         confirm.click();
 
-        log(
-            `Repost removed | Total reposts removed: ${removedReposts + 1}`
-        );
-
         return true;
     }
 
-    let processed = 0;
-    let deletedTweets = 0;
-    let removedReposts = 0;
-    let skipped = 0;
-
-    let noNewArticlesCount = 0;
+    let emptyPasses = 0;
 
     while (!window.stopCleaning) {
 
-        const articles = [
-            ...document.querySelectorAll(
-                "article"
-            )
-        ];
+        const target =
+            await findTargetArticle();
 
-        if (!articles.length) {
+        if (!target) {
 
-            log(
-                "No articles found."
-            );
-
-            break;
-        }
-
-        const unprocessedArticles =
-            articles.filter(
-                a => !a.dataset.cleaned
-            );
-
-        if (
-            !unprocessedArticles.length
-        ) {
-
-            noNewArticlesCount++;
+            emptyPasses++;
 
             log(
-                `No new articles found (${noNewArticlesCount}/5)`
+                `No target found | Scroll attempt ${emptyPasses}/5`
             );
 
-        } else {
-
-            noNewArticlesCount = 0;
-        }
-
-        if (
-            noNewArticlesCount >= 5
-        ) {
-
-            log(
-                "No new tweets loaded after multiple scrolls."
-            );
-
-            break;
-        }
-
-        let acted = false;
-
-        for (const article of articles) {
-
-            if (
-                window.stopCleaning
-            ) {
+            if (emptyPasses >= 5) {
 
                 log(
-                    "STOP REQUESTED"
+                    "No more matching tweets/reposts."
                 );
 
                 break;
             }
 
-            if (
-                article.dataset.cleaned
-            ) {
-                continue;
-            }
+            window.scrollBy(0, 1200);
 
-            processed++;
+            await delay(1500);
 
-            log(
-                `Checking article #${processed} | Deleted: ${deletedTweets} | Reposts removed: ${removedReposts} | Skipped: ${skipped}`
-            );
+            continue;
+        }
 
-            const date =
-                getTweetDate(article);
+        emptyPasses = 0;
 
-            if (!date) {
+        log(
+            `Target ${target.type} | ${target.date.toDateString()}`
+        );
+
+        let success = false;
+
+        if (
+            target.type === "tweet"
+        ) {
+
+            success =
+                await deleteTweet(
+                    target.article
+                );
+
+            if (success) {
+
+                window.deletedTweets++;
 
                 log(
-                    "No date found."
+                    `Tweet deleted | Total deleted: ${window.deletedTweets}`
                 );
-
-                article.dataset.cleaned =
-                    "true";
-
-                skipped++;
-
-                continue;
             }
 
-            log(
-                `Tweet date: ${date.toDateString()}`
-            );
+        } else {
 
-            if (
-                !shouldDeleteByDate(
-                    date
-                )
-            ) {
+            success =
+                await undoRepost(
+                    target.article
+                );
+
+            if (success) {
+
+                window.removedReposts++;
 
                 log(
-                    "Skipped by date."
+                    `Repost removed | Total reposts removed: ${window.removedReposts}`
                 );
-
-                article.dataset.cleaned =
-                    "true";
-
-                skipped++;
-
-                continue;
-            }
-
-            const repost =
-                isRepost(article);
-
-            log(
-                `Is repost: ${repost}`
-            );
-
-            if (
-                repost &&
-                deleteReposts
-            ) {
-
-                if (
-                    protectReposts
-                ) {
-
-                    const repostKeyword =
-                        containsProtectedKeyword(
-                            article
-                        );
-
-                    if (
-                        repostKeyword
-                    ) {
-
-                        skipped++;
-
-                        article.dataset.cleaned =
-                            "true";
-
-                        log(
-                            `Protected repost keyword "${repostKeyword}" | Skipped: ${skipped}`
-                        );
-
-                        continue;
-                    }
-                }
-
-                log(
-                    `Target repost: ${date.toDateString()}`
-                );
-
-                const success =
-                    await undoRepost(
-                        article
-                    );
-
-                if (success) {
-
-                    article.dataset.cleaned =
-                        "true";
-
-                    removedReposts++;
-
-                    acted = true;
-
-                    await delay(
-                        waitAfterAction
-                    );
-
-                    break;
-                }
-
-                continue;
-            }
-
-            const matchedKeyword =
-                containsProtectedKeyword(
-                    article
-                );
-
-            if (
-                matchedKeyword
-            ) {
-
-                skipped++;
-
-                article.dataset.cleaned =
-                    "true";
-
-                log(
-                    `Protected keyword match "${matchedKeyword}" | Skipped: ${skipped}`
-                );
-
-                continue;
-            }
-
-            const mine =
-                isMyTweet(article);
-
-            log(
-                `Is mine: ${mine}`
-            );
-
-            if (
-                mine &&
-                deleteTweets
-            ) {
-
-                log(
-                    `Target tweet: ${date.toDateString()}`
-                );
-
-                const success =
-                    await deleteTweet(
-                        article
-                    );
-
-                if (success) {
-
-                    article.dataset.cleaned =
-                        "true";
-
-                    deletedTweets++;
-
-                    acted = true;
-
-                    await delay(
-                        waitAfterAction
-                    );
-
-                    break;
-                }
             }
         }
 
-        window.scrollBy(0, 1500);
+        if (!success) {
 
-        await delay(scrollDelay);
+            log(
+                "Action failed. Scrolling slightly and retrying."
+            );
 
-        if (!acted) {
+            window.scrollBy(0, 400);
 
-            log("Scrolling...");
+            await delay(1000);
+
+            continue;
         }
+
+        await delay(waitAfterAction);
     }
 
     if (window.stopCleaning) {
 
-        log("STOPPED BY USER");
+        log(
+            "STOPPED BY USER"
+        );
     }
 
     log(
@@ -586,19 +535,15 @@ async function CleanTwitter({
     );
 
     log(
-        `Processed: ${processed}`
+        `Deleted tweets: ${window.deletedTweets}`
     );
 
     log(
-        `Deleted tweets: ${deletedTweets}`
+        `Removed reposts: ${window.removedReposts}`
     );
 
     log(
-        `Removed reposts: ${removedReposts}`
-    );
-
-    log(
-        `Skipped: ${skipped}`
+        `Skipped items: ${window.skippedItems}`
     );
 }
 ```
