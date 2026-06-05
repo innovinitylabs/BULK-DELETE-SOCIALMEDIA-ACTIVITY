@@ -14,6 +14,8 @@ async function CleanTwitter({
 
     keywordMatchType = "partial", // "partial" or "full"
 
+    replyMode = "all", // "all", "replies", "nonReplies", "others", "self"
+
     protectReposts = false,
 
     waitAfterAction = 2500,
@@ -205,6 +207,102 @@ async function CleanTwitter({
         return false;
     }
 
+    function getReplyTargets(article) {
+
+        const targets = [];
+    
+        const replyBlocks =
+            [...article.querySelectorAll("div")];
+    
+        for (const div of replyBlocks) {
+    
+            const text =
+                div.innerText || "";
+    
+            if (
+                !text.startsWith(
+                    "Replying to"
+                )
+            ) {
+                continue;
+            }
+    
+            const links =
+                div.querySelectorAll(
+                    'a[href^="/"]'
+                );
+    
+            for (const link of links) {
+    
+                const href =
+                    link.getAttribute("href");
+    
+                if (
+                    href &&
+                    href.startsWith("/")
+                ) {
+    
+                    targets.push(
+                        href
+                            .replace("/", "")
+                            .toLowerCase()
+                    );
+                }
+            }
+    
+            break;
+        }
+    
+        return [...new Set(targets)];
+    }
+    
+    function passesReplyMode(
+        article,
+        username,
+        replyMode
+    ) {
+    
+        if (replyMode === "all") {
+            return true;
+        }
+    
+        const targets =
+            getReplyTargets(article);
+    
+        const isReply =
+            targets.length > 0;
+    
+        const selfReply =
+            targets.includes(
+                username.toLowerCase()
+            );
+    
+        switch (replyMode) {
+    
+            case "replies":
+                return isReply;
+    
+            case "nonReplies":
+                return !isReply;
+    
+            case "others":
+                return (
+                    isReply &&
+                    !selfReply
+                );
+    
+            case "self":
+                return (
+                    isReply &&
+                    selfReply
+                );
+    
+            default:
+                return true;
+        }
+    }
+
+
     async function findTargetArticle() {
 
         const articles = Array.from(
@@ -269,6 +367,23 @@ async function CleanTwitter({
                     article,
                     date
                 };
+            }
+
+            if (
+                !passesReplyMode(
+                    article,
+                    username,
+                    replyMode
+                )
+            ) {
+            
+                window.skippedItems++;
+            
+                log(
+                    `Skipped by reply mode (${replyMode})`
+                );
+            
+                continue;
             }
 
             const mine =
